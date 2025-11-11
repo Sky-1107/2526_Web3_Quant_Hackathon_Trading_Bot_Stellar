@@ -157,7 +157,7 @@ def get_total_asset(balance_data: dict):
     print(f"Total USD: {total_usd}")
     return total_usd
 
-def get_ohlcv(asset: str = "BTC", interval: str = "1h", days: int = 180):
+def get_ohlcv(asset: str = "BTC", interval: str = "15m", days: int = 90):
     """
     Get historical OHLCV data from Horus API.
 
@@ -207,11 +207,11 @@ def calculate_atr(df: pd.DataFrame, period: int = 20):
     atr = tr.rolling(window = period).mean()
     return atr
 
-def calculate_technical_indicators(df: pd.DataFrame, short_period: int = 5, long_period: int = 40, atr_period: int = 30):
-    df['short_MA'] = df['close'].rolling(window = short_period).mean()
+def calculate_technical_indicators(df: pd.DataFrame, short_period: int = 20, long_period: int = 100, atr_period: int = 80):
+    df['short_MA'] = df['close'].ewm(span = short_period).mean()
     df['long_MA'] = df['close'].rolling(window = long_period).mean()
     df['stdV'] = df['close'].rolling(window = short_period).std()
-    df['std_volavolatility_ratio'] = df['close'].rolling(window = 100).std() / df['close'].rolling(window = 100).mean()
+    df['std_volavolatility_ratio'] = df['close'].rolling(window = 1000).std() / df['close'].rolling(window = 1000).mean()
     df['atr'] = calculate_atr(df, atr_period)
     return df
 
@@ -237,7 +237,7 @@ def calculate_coefficient(df):
         current_std = current_price * 0.01
     std_volavolatility_ratio = latest['std_volavolatility_ratio']
     objective_volatility_ratio = 0.02 / std_volavolatility_ratio
-    objective_volatility_ratio = max(0.5, min(2, objective_volatility_ratio))
+    objective_volatility_ratio = max(0.8, min(1.25, objective_volatility_ratio))
     coefficient = objective_volatility_ratio * ma_diff / latest['atr']
     return coefficient
 
@@ -249,6 +249,7 @@ class Trading_Bot:
         ]
         sellpoint = 0
         while True:
+            print(get_balance())
             balance = get_balance()
             decision_list = []
             exchange_info = get_exchange_info()
@@ -299,7 +300,7 @@ class Trading_Bot:
                 'balance':balance.get('SpotWallet',{}).get(target,{}).get('Free',0)
             }
             current_USD = balance.get('SpotWallet',{}).get('USD',{}).get('Free',0)
-            coefficient = min(5, coefficient)
+            decision['coefficient'] = min(5, decision['coefficient'])
             if coefficient > 0.5:
                 decision['action'] = 'BUY'
                 decision['amount'] = min(
