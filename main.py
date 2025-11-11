@@ -207,11 +207,11 @@ def calculate_atr(df: pd.DataFrame, period: int = 20):
     atr = tr.rolling(window = period).mean()
     return atr
 
-def calculate_technical_indicators(df: pd.DataFrame, short_period: int = 5, long_period: int = 40, atr_period: int = 10):
+def calculate_technical_indicators(df: pd.DataFrame, short_period: int = 5, long_period: int = 40, atr_period: int = 30):
     df['short_MA'] = df['close'].rolling(window = short_period).mean()
     df['long_MA'] = df['close'].rolling(window = long_period).mean()
     df['stdV'] = df['close'].rolling(window = short_period).std()
-    df['std_volavolatility_ratio'] = df['close'].rolling(window = long_period).std() / df['close'].rolling(window = long_period).mean()
+    df['std_volavolatility_ratio'] = df['close'].rolling(window = 100).std() / df['close'].rolling(window = 100).mean()
     df['atr'] = calculate_atr(df, atr_period)
     return df
 
@@ -299,7 +299,7 @@ class Trading_Bot:
                 'balance':balance.get('SpotWallet',{}).get(target,{}).get('Free',0)
             }
             current_USD = balance.get('SpotWallet',{}).get('USD',{}).get('Free',0)
-
+            coefficient = min(5, coefficient)
             if coefficient > 0.5:
                 decision['action'] = 'BUY'
                 decision['amount'] = min(
@@ -309,7 +309,7 @@ class Trading_Bot:
                 decision['spending'] = decision['amount']*price
 
                 # To suppress large purchases
-                decision['amount'] = decision['amount'] ** (1 - (decision['spending'] / current_USD) ** 2)
+                decision['amount'] = decision['amount'] ** (1 - (decision['spending'] / current_USD) ** 3)
                 decision['spending'] = decision['amount']*price
             if coefficient < threshold:
                 decision['action'] ='SELL'
