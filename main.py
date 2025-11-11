@@ -299,7 +299,7 @@ class Trading_Bot:
                 'balance':balance.get('SpotWallet',{}).get(target,{}).get('Free',0)
             }
             current_USD = balance.get('SpotWallet',{}).get('USD',{}).get('Free',0)
-            coefficient = min(5, coefficient)
+            decision['coefficient'] = min(5, decision['coefficient'])
             if coefficient > 0.5:
                 decision['action'] = 'BUY'
                 decision['amount'] = min(
