@@ -218,7 +218,7 @@ def calculate_atr(df: pd.DataFrame, period: int = 20):
     atr = tr.rolling(window = period).mean()
     return atr
 
-def calculate_technical_indicators(df: pd.DataFrame, short_period: int = 20, long_period: int = 100, atr_period: int = 80):
+def calculate_technical_indicators(df: pd.DataFrame, short_period: int = 7, long_period: int = 40, atr_period: int = 80):
     df['short_MA'] = df['close'].ewm(span = short_period).mean()
     df['long_MA'] = df['close'].rolling(window = long_period).mean()
     df['stdV'] = df['close'].rolling(window = short_period).std()
@@ -320,7 +320,7 @@ class Trading_Bot:
             current_USD = balance.get('SpotWallet',{}).get('USD',{}).get('Free',0)
             decision['balance_USD']=decision['balance']*price
             decision['coefficient'] = min(5, decision['coefficient'])
-            if coefficient > 0.3:
+            if coefficient > threshold + 0.1:
                 decision['action'] = 'BUY'
                 decision['amount'] = min(
                     current_USD * safety_coefficient / price,
