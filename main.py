@@ -80,6 +80,17 @@ def get_coin_precision(coin: str, exchange_info: dict) -> int:
     print(f"Error obtaining precision for {coin}.")
     return None
 
+def get_price_precision(coin: str, exchange_info: dict) -> int:
+    """Get the precision for a specific coin."""
+
+    if not exchange_info or "TradePairs" not in exchange_info:
+        return None
+    for info in exchange_info['TradePairs'].values():
+        if info['Coin'] == coin:
+            return info['PricePrecision']
+    print(f"Error obtaining precision for {coin}.")
+    return None
+
 def get_ticker(pair = None):
     """Get ticker for one or all pairs."""
     params = {'timestamp': _get_timestamp()}
@@ -207,7 +218,7 @@ def calculate_atr(df: pd.DataFrame, period: int = 20):
     atr = tr.rolling(window = period).mean()
     return atr
 
-def calculate_technical_indicators(df: pd.DataFrame, short_period: int = 20, long_period: int = 100, atr_period: int = 80):
+def calculate_technical_indicators(df: pd.DataFrame, short_period: int = 7, long_period: int = 40, atr_period: int = 80):
     df['short_MA'] = df['close'].ewm(span = short_period).mean()
     df['long_MA'] = df['close'].rolling(window = long_period).mean()
     df['stdV'] = df['close'].rolling(window = short_period).std()
@@ -237,7 +248,7 @@ def calculate_coefficient(df):
         current_std = current_price * 0.01
     std_volavolatility_ratio = latest['std_volavolatility_ratio']
     objective_volatility_ratio = 0.02 / std_volavolatility_ratio
-    objective_volatility_ratio = max(0.8, min(1.25, objective_volatility_ratio))
+    objective_volatility_ratio = max(0.9, min(1.11, objective_volatility_ratio))
     coefficient = objective_volatility_ratio * ma_diff / latest['atr']
     return coefficient
 
@@ -249,10 +260,10 @@ class Trading_Bot:
         ]
         sellpoint = 0
         while True:
-            print(get_balance())
             balance = get_balance()
             decision_list = []
             exchange_info = get_exchange_info()
+            print("balance: ",balance)
             for coin in coin_list:
                 print(f"-- Trading {coin} ---")
                 decision = self.strategy(coin, balance, sellpoint, safety, safety_coefficient)
@@ -260,22 +271,27 @@ class Trading_Bot:
                 decision_list.append(decision)
                 time.sleep(2)
             decision_list.sort(key = lambda x: -(x.get('coefficient')))
-            sellpoint = max(0.5, decision_list[3].get('coefficient', 0) * 0.95)
+            sellpoint = max(0.5, decision_list[2].get('coefficient', 0) * 0.95)
             decision_list.sort(key = lambda x: (x.get('action') == "NULL", x.get('action') == 'BUY', -abs(x.get('coefficient'))))
             print(f'======= NEW TRADE WITH THRESHOLD {sellpoint} =======')
             for decision in decision_list:
                 print(decision)
                 coin = decision['target']
-                if decision['action'] == 'BUY' and (balance.get('SpotWallet',{}).get('USD',{}).get('Free',0) > safety):
+                if decision['action'] == 'BUY' and (balance.get('SpotWallet',{}).get('USD',{}).get('Free',0) > safety) and decision['balance_USD']<decision['Max_position']:
                     print('-----------------------------------')
-                    print(place_order(coin, "BUY", round(decision['amount'], get_coin_precision(coin, exchange_info))))
+                    amount=round(decision['amount'], get_coin_precision(coin, exchange_info))
+                    print(place_order(coin, "BUY", amount))
+                    print("*****")
+                    time.sleep(5)
+                    print(place_order(coin, "SELL", amount, price=round(decision['sell_price'], get_price_precision(coin, exchange_info))))
                     print('-----------------------------------')
-                    time.sleep(10)
+                    time.sleep(5)
                 elif decision['action'] == 'SELL':
                     print('-----------------------------------')
+                    print(cancel_order(pair=f"{coin}/USD"))
                     print(place_order(coin, "SELL", round(decision['amount'], get_coin_precision(coin, exchange_info))))
                     print('-----------------------------------')
-                    time.sleep(10)
+                    time.sleep(5)
             time.sleep(20)
     
     def strategy(self, target, balance, threshold, safety = 1000, safety_coefficient = 0.4):
@@ -297,30 +313,31 @@ class Trading_Bot:
                 'amount': abs(max_position*coefficient)/price,
                 'coefficient': coefficient,
                 'Max_position': max_position,
-                'balance':balance.get('SpotWallet',{}).get(target,{}).get('Free',0)
+                'balance':balance.get('SpotWallet',{}).get(target,{}).get('Free',0)+balance.get('SpotWallet',{}).get(target,{}).get('Lock',0),
+                'price':price
             }
             current_USD = balance.get('SpotWallet',{}).get('USD',{}).get('Free',0)
+            decision['balance_USD']=decision['balance']*price
             decision['coefficient'] = min(5, decision['coefficient'])
-            if coefficient > 0.5:
+            if coefficient > 0.3:
                 decision['action'] = 'BUY'
                 decision['amount'] = min(
                     current_USD * safety_coefficient / price,
                     abs(max_position * coefficient) / price
                 )
                 decision['spending'] = decision['amount']*price
-
+            #print('sell price: ', (data['stdV'].values[-1]))
+            decision['sell_price'] = price + 3 * (data['stdV'].values[-1])
                 # To suppress large purchases
-                decision['amount'] = decision['amount'] ** (1 - (decision['spending'] / current_USD) ** 3)
-                decision['spending'] = decision['amount']*price
+                #decision['amount'] = decision['amount'] ** (1 - (decision['spending'] / current_USD) ** 3)
+                #decision['spending'] = decision['amount']*price
             if coefficient < threshold:
                 decision['action'] ='SELL'
-                decision['amount'] = min(
-                    decision.get('balance', 0),
-                    abs(max_position * coefficient) / price
-                )
-                if decision['amount'] == 0:
-                    decision['action'] ='NULL'
-                decision['spending'] = decision['amount'] * price
+                #decision['amount'] = min(decision.get('balance', 0),abs(max_position * coefficient) / price)
+                decision['amount'] = decision.get('balance', 0)
+            if decision['amount'] == 0:
+                decision['action'] ='NULL'
+            decision['spending'] = decision['amount'] * price
             return decision
         except Exception as e:
             print(e)
@@ -337,7 +354,9 @@ class Trading_Bot:
 if __name__ == "__main__":
     bot = Trading_Bot()
     while True:
+        print('-------======****)] Bot Deployed [(****======-------')
         try:
             bot.run()
-        except:
+        except Exception as e:
+            print(e)
             time.sleep(10)
